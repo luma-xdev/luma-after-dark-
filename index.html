@@ -336,7 +336,34 @@ function read(key,fallback){
   return Array.isArray(data)?data:fallback;
  }catch(e){return fallback;}
 }
-let posts=read(POSTS_KEY,starterPosts);
+let posts=[...starterPosts];
+  
+async function loadCommunityPosts(){
+  const { data, error } = await supabaseClient
+    .from("confessions")
+    .select("id, content, category, created_at")
+    .order("created_at", { ascending: false });
+
+  if(error){
+    console.error("Loading posts failed:", error);
+    toast("Posts could not load. Check your connection.");
+    return;
+  }
+
+  const communityPosts = data.map(p => ({
+    id: p.id,
+    text: p.content,
+    category: p.category,
+    time: new Date(p.created_at).getTime(),
+    likes: 0,
+    demo: false
+  }));
+
+  posts = [...starterPosts, ...communityPosts];
+  render();
+loadCommunityPosts();
+  }
+  
 let likes=read(LIKES_KEY,[]);
 let reports=read(REPORTS_KEY,[]);
 let activeMood="All";
@@ -409,7 +436,70 @@ function render(){
 $("story").addEventListener("input",()=>{
  $("counter").textContent=$("story").value.length+"/600";
 });
-$("postForm").addEventListener("submit",e=>{
+
+$("postForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const text = $("story").value.trim();
+
+  if (text.length < 3) {
+    toast("Please write at least 3 characters.");
+    return;
+  }
+
+  if (!$("confirm").checked) {
+    toast("Please confirm the privacy rule.");
+    return;
+  }
+
+  const category = $("category").value;
+
+  const { data, error } = await supabaseClient
+    .from("confessions")
+    .insert({
+      content: text,
+      category: category
+    })
+    .select("id, content, category, created_at")
+    .single();
+
+  if (error) {
+    console.error("Submit failed:", error);
+    toast("Could not post. Please check your connection.");
+    return;
+  }
+
+  const post = {
+    id: data.id,
+    text: data.content,
+    category: data.category,
+    time: new Date(data.created_at).getTime(),
+    likes: 0,
+    demo: false
+  };
+
+  posts.unshift(post);
+
+  $("story").value = "";
+  $("counter").textContent = "0/600";
+  $("confirm").checked = false;
+
+  activeMood = "All";
+  $("filter").value = "All";
+
+  document.querySelectorAll(".mood").forEach(button => {
+    button.classList.remove("active");
+  });
+
+  render();
+  toast("Your confession is now shared with the community.");
+
+  $("feedSection").scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+});
+  
  e.preventDefault();
  const text=$("story").value.trim();
  if(text.length<3){toast("Please write at least 3 characters.");return;}
